@@ -1,3 +1,8 @@
 float64 t
 ---
-std_msgs/Float64MultiArray result
+float64 x
+float64 y
+float64 Tx
+float64 Ty
+float64 Nx
+float64 Ny
