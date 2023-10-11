@@ -20,6 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
+            'efd_service = efd_pkg.service_member_function:main',
         ],
     },
 )

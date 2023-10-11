@@ -20,12 +20,13 @@ class EFDService(Node):
         # `Nx(t)`, `Ny(t)`
         self.srv = self.create_service(ComputePointEFD, 'compute_efd',
                                        self.compute_efd_callback)
+
     def pc_callback(self, msg):
         self.get_logger().info('I heard: "%s"' % msg.data)
 
     def compute_efd_callback(self, request, response):
         response.sum = request.a + request.b
-        self.get_logger().info('Incoming request\na: %d b: %d' % (request.a, request.b))
+        self.get_logger().info('Incoming request\nt: %d' % (request.t))
 
         return response
 

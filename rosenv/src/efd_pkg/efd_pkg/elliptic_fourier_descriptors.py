@@ -204,7 +204,8 @@ def reconstruct(efds, T, K):
     sin_term = np.sin( 2 * np.pi * arg_grid )
     
     reconstructed[:,0] = efds[0,0] + np.sum(a_n_grid * cos_term + b_n_grid * sin_term, axis=1)
-    reconstructed[:,1] = efds[0,0] + np.sum(c_n_grid * cos_term + d_n_grid * sin_term, axis=1)
+    reconstructed[:,1] = efds[0,2] + np.sum(c_n_grid * cos_term + d_n_grid * sin_term, axis=1)
+    print(f'A0: {efds[0, 0]}\tC0: {efds[0, 2]}')
 
     return reconstructed
     
