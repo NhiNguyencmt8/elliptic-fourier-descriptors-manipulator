@@ -1,7 +1,64 @@
 import math
 import numpy as np
+import rclpy # Python library for ROS 2
+from rclpy.node import Node # Handles the creation of nodes
+from sensor_msgs.msg import Image # Image is the message type
+from cv_bridge import CvBridge # Package to convert between ROS and OpenCV Images
+import cv2 # OpenCV library
+from std_msgs.msg import String
+   
 
 class GraspPlanning:
+
+    def __init__(self):
+        # Initiate the Node class's constructor and give it a name
+        super().__init__('grasp_planning')
+        
+        # Create the subscriber. This subscriber will receive an Image
+        # from the video_frames topic. The queue size is 10 messages.
+
+        self.object_subscription = self.create_subscription(
+        String, #Change msg type
+        '/object', 
+        self.obj_listener_callback, 
+        10)
+
+        self.img_subscription = self.create_subscription(
+        Image, 
+        '/camera1/image_raw', 
+        self.img_listener_callback, 
+        10)
+        self.img_subscription # prevent unused variable warning
+
+        # Create the publisher. This publisher will publish an Image
+        # to the video_frames topic. The queue size is 10 messages.
+        self.img_publisher_ = self.create_publisher(Image, 'output_image', 10)
+        # Used to convert between ROS and OpenCV images
+        self.br = CvBridge()
+        self.object_center = np.array([0,0])
+        
+    def img_listener_callback(self, data):
+        # Display the message on the console
+        self.get_logger().info('Receiving video frame')
+    
+        # Convert ROS Image message to OpenCV image
+        current_frame = self.br.imgmsg_to_cv2(data)
+
+        # Find the contact locations
+        metric, final_locations = self.quality_min_singular(self.object_center, self.contact_locations)
+        
+        #Drawing the locations on the image
+        
+
+        # Publish the image.
+        # The 'cv2_to_imgmsg' method converts an OpenCV
+        # image to a ROS 2 image message
+        self.publisher_.publish(self.br.cv2_to_imgmsg(current_frame, encoding="bgr8")) 
+    
+    def obj_listener_callback(self, msg):
+        self.get_logger().info('I heard: "%s"' % msg.data) 
+        self.object_center = msg.object_center
+        self.contact_locations = msg.object_center
 
     @staticmethod
     def grasp_matrix(object_center, contact_location):
@@ -93,7 +150,28 @@ class GraspPlanning:
         
         return max_Q_SGP, final_locations
     
-    
+
+def main(args=None):
+  
+  # Initialize the rclpy library
+  rclpy.init(args=args)
+  
+  # Create the node
+  grasp = GraspPlanning()
+  
+  # Spin the node so the callback function is called.
+  rclpy.spin(grasp)
+  
+  # Destroy the node explicitly
+  # (optional - otherwise it will be done automatically
+  # when the garbage collector destroys the node object)
+  grasp.destroy_node()
+  
+  # Shutdown the ROS client library for Python
+  rclpy.shutdown()
+  
+if __name__ == '__main__':
+  main()    
     
                         
 
