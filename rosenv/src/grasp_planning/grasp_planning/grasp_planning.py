@@ -68,8 +68,15 @@ class GraspPlanning(Node):
 
             img = self.br.imgmsg_to_cv2(response.img,
                                         desired_encoding='passthrough')
-            print(self.set_of_points)
-            img = cv2.circle(img, (int(response.x), int(response.y)),
+            self.center_x = response.obj_x
+            self.center_y = response.obj_y
+            x1, y1, t = self.quality_min_singular()
+            second_request = self.send_request(t/100 + 0.5)
+            x2 = second_request.x
+            y2 = second_request.y
+            img = cv2.circle(img, (int(x1), int(y1)),
+                             3, (0, 0, 255), -1)
+            img = cv2.circle(img, (int(x2), int(y2)),
                              3, (0, 0, 255), -1)
             #cv2.circle(current_frame,(self.set_of_points[0][0],self.set_of_points[0][1]), 63, (0,255,0), -1)
             self.img_publisher_.publish(self.br.cv2_to_imgmsg(img, encoding="bgr8")) 
@@ -91,46 +98,51 @@ class GraspPlanning(Node):
        
         return self.response
 
-    @staticmethod
-    def grasp_matrix(object_center, contact_location):
+    def grasp_matrix(self, contact_location):
         """
         """
-        object_angle = math.atan2(object_center[2],object_center[1])
+        object_angle = math.atan2(self.center_x,self.center_y)
         theta = object_angle; #Since we are rotating from the base frame to the contact point frame
-        R = np.array([math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)])
-        ax = object_center[1] - contact_location[1]
-        ay = object_center[2] - contact_location[2]
-        G = np.array([[np.matmul(R,np.eye(2, dtype=int)) , np.matmul(R,np.array([[ax],[ay]]))], [0, 0, 1]])
+        R = np.array([[math.cos(theta), -math.sin(theta)], [math.sin(theta), math.cos(theta)]])
+        ax = self.center_x - contact_location[0]
+        ay = self.center_y - contact_location[1]
+        X = R*np.eye(2, dtype=int)
+        Y = np.matmul(R,np.array([[ax],[ay]]))
+        G1 = np.concatenate((X, Y),axis=1)
+        G2 = np.array([[0, 0, 1]])
+        G = np.concatenate((G1,G2), axis=0)
         return G
     
-    def quality_min_singular(object_center, contact_locations):
-
+    def quality_min_singular(self):
+        contact_locations = self.set_of_points
         G = np.eye(3,dtype=int)
         min_Q_MSV = 1000000000
+        x1 = 0
+        y1 = 0
+        t = 0
         
-        final_locations = np.zeros(shape=(3, 2))
+        final_locations = np.zeros(shape=(2, 2))
         #Find a combination of 4 contact points out of the set
         #TODO: Find a better way for this -> there's iteratool in python
         for i in range(len(contact_locations)):
-            Gi = GraspPlanning.grasp_matrix(object_center, contact_locations[i])
-            for j in range(len(contact_locations)):
-                Gj = GraspPlanning.grasp_matrix(object_center, contact_locations[j])
-                #Append to the large matrix
-                G = np.eye(3,dtype=int) # R
-                G = np.append(G,Gi,axis=0)
-                G = np.append(G,Gj,axis=0)
-                #Grasp metrics calculation
-                P, D, Q = np.linalg.svd(np.transpose(G), full_matrices=False)
-                G_svg = np.matmul(np.matmul(P, np.diag(D)), Q)
-                Q_MSV = np.min(G_svg)
-                #Comparision
-                if (Q_MSV < min_Q_MSV):
-                    #Swap
-                    min_Q_MSV = Q_MSV
-                    #Record locations
-                    final_locations[0] = contact_locations[i]
-                    final_locations[1] = contact_locations[j]
-        return min_Q_MSV, final_locations
+            Gi = self.grasp_matrix(contact_locations[i])
+            #Append to the large matrix
+            G = np.eye(3,dtype=int) # R
+            G = np.concatenate((G,Gi), axis=0)
+            #Grasp metrics calculation
+            U, S, Vh = np.linalg.svd(G, full_matrices=False)
+            #G_svg = np.matmul(np.matmul(P, np.diag(D)), Q)
+            Q_MSV = np.min(S)
+            #Comparision
+            if (Q_MSV < min_Q_MSV):
+                #Swap
+                min_Q_MSV = Q_MSV
+                #Record locations
+                x1 = contact_locations[i][0]
+                y1 = contact_locations[i][1]
+                t = i
+        
+        return x1, y1, t
     
 
     
