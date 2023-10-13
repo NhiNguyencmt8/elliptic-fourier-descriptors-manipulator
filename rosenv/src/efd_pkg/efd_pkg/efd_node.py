@@ -37,6 +37,8 @@ class EFDService(Node):
         self.a0 = 0
         self.c0 = 0
         self.T = 0
+        
+        self.obj_center = (0.0, 0.0)
 
         # "Image" size 1000x1000
         self.im_sz = (1000, 1000)
@@ -54,7 +56,8 @@ class EFDService(Node):
 
         # Project points to an "image"
         silhouette = np.zeros(self.im_sz, dtype=np.ubyte)
-        silhouette[obj_pc[:, 0], obj_pc[:, 1]] = 255
+        silhouette[obj_pc[:, 1], obj_pc[:, 0]] = 255
+        self.obj_center = (np.mean(obj_pc[:, 0]), np.mean(obj_pc[:, 1]))
         contours, hierarchy = cv2.findContours(
             silhouette, cv2.RETR_TREE, cv2.CHAIN_APPROX_SIMPLE)
         # cv2.imwrite('silhouette.jpg', silhouette)
@@ -64,28 +67,12 @@ class EFDService(Node):
         self.coefs = pyefd.elliptic_fourier_descriptors(contour, order=self.n)
         self.a0, self.c0 = pyefd.calculate_dc_coefficients(
                 np.squeeze(contours[0]))
-        dxy = np.diff(contour, axis=0)
-        dt = np.sqrt((dxy ** 2).sum(axis=1))
-        tmp = np.concatenate([([0.0]), np.cumsum(dt)])
-        self.T = tmp[-1]
 
 
     def compute_efd_callback(self, request, response):
         print('Service requested')
         t = request.t
-        # Calculate T
-        omega = 2*self.n*math.pi/self.T
-        c = math.cos(omega*t)
-        s = math.sin(omega*t)
-        cs = np.array([[c], [s]])
-        sc = np.array([[-s], [c]])
         # Calculate x, y, Tx, Ty, Nx, Ny
-        # response.x = self.a0 + np.sum(self.coefs[:, [0, 1]] @ cs)
-        # response.y = self.c0 + np.sum(self.coefs[:, [2, 3]] @ cs)
-        response.tx = omega * np.sum(self.coefs[:, [0, 1]] @ sc)
-        response.ty = omega * np.sum(self.coefs[:, [2, 3]] @ sc)
-        response.nx = -omega * omega * np.sum(self.coefs[:, [0, 1]] @ cs)
-        response.ny = -omega * omega * np.sum(self.coefs[:, [2, 3]] @ cs)
 
         t = np.array([request.t])
         # Append extra dimension to enable element-wise broadcasted multiplication
@@ -93,18 +80,61 @@ class EFDService(Node):
 
         orders = coeffs.shape[0]
         orders = np.arange(1, orders + 1).reshape(-1, 1)
-        order_phases = 2 * orders * np.pi * t.reshape(1, -1)
+        omegas = 2 * orders * np.pi
+        order_phases = omegas * t.reshape(1, -1)
 
-        xt_all = coeffs[:, 0] * np.cos(order_phases) + coeffs[:, 1] * np.sin(order_phases)
-        yt_all = coeffs[:, 2] * np.cos(order_phases) + coeffs[:, 3] * np.sin(order_phases)
+        x = coeffs[:, 0] * np.cos(order_phases) + \
+            coeffs[:, 1] * np.sin(order_phases)
+        y = coeffs[:, 2] * np.cos(order_phases) + \
+            coeffs[:, 3] * np.sin(order_phases)
 
-        xt_all = xt_all.sum(axis=0)
-        yt_all = yt_all.sum(axis=0)
-        xt_all = xt_all + np.ones((1,)) * self.a0
-        yt_all = yt_all + np.ones((1,)) * self.a0
+        tx = -omegas * coeffs[:, 0] * np.sin(order_phases) + \
+            omegas * coeffs[:, 1] * np.cos(order_phases)
+        ty = -omegas * coeffs[:, 2] * np.sin(order_phases) + \
+            omegas * coeffs[:, 3] * np.sin(order_phases)
 
-        response.x = xt_all[0]
-        response.y = yt_all[0]
+        nx = -omegas*omegas * coeffs[:, 0] * np.cos(order_phases) - \
+            omegas*omegas * coeffs[:, 1] * np.sin(order_phases)
+        ny = -omegas*omegas * coeffs[:, 2] * np.cos(order_phases) - \
+            omegas*omegas * coeffs[:, 3] * np.sin(order_phases)
+
+        dnx = (omegas**3) * coeffs[:, 0] * np.sin(order_phases) - \
+            (omegas**3) * coeffs[:, 1] * np.cos(order_phases)
+        dny = (omegas**3) * coeffs[:, 2] * np.sin(order_phases) - \
+            (omegas**3) * coeffs[:, 3] * np.cos(order_phases)
+
+        ddnx = (omegas**4) * coeffs[:, 0] * np.cos(order_phases) + \
+            (omegas**4) * coeffs[:, 1] * np.sin(order_phases)
+        ddny = (omegas**4) * coeffs[:, 2] * np.cos(order_phases) + \
+            (omegas**4) * coeffs[:, 3] * np.sin(order_phases)
+
+        x = x.sum(axis=0)
+        y = y.sum(axis=0)
+        x = x + np.ones((1,)) * self.a0
+        y = y + np.ones((1,)) * self.c0
+
+        tx = tx.sum(axis=0)
+        ty = ty.sum(axis=0)
+
+        nx = nx.sum(axis=0)[0]
+        ny = ny.sum(axis=0)[0]
+
+        dnx = dnx.sum(axis=0)[0]
+        dny = dny.sum(axis=0)[0]
+        ddnx = ddnx.sum(axis=0)[0]
+        ddny = ddny.sum(axis=0)[0]
+
+        response.obj_x = self.obj_center[0]
+        response.obj_y = self.obj_center[1]
+        response.x = x[0]
+        response.y = y[0]
+        response.tx = tx[0]
+        response.ty = ty[0]
+        response.nx = nx
+        response.ny = ny
+        response.c = math.sqrt(nx**2 + ny**2)
+        response.dc = (nx*dnx + ny*dny)/response.c
+        response.ddc = ((dnx**2 + nx*ddnx + dny**2 + ny*ddny)*response.c - (nx*dnx + ny*dny)*response.dc)/(response.c**2)
 
         # Visualize
         vis_contour = pyefd.reconstruct_contour(

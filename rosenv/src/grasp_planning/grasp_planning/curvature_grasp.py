@@ -1,5 +1,4 @@
 import time
-import math
 
 from interfaces.srv import ComputePointEFD
 import rclpy
@@ -30,10 +29,15 @@ class CurvatureGrasp(Node):
 
     def run(self):
         while rclpy.ok():
-            response = self.send_request(1.5)
+            # Search for maximum curvature grasp
+            step = 0.01
+            for i in range(0.0, 1.0, step):
+            response = self.send_request(0.0)
             print(f'Response:\tx = {response.x}\ty = {response.y}\n' +
                   f'Tx = {response.tx}\tTy = {response.ty}\n' +
-                  f'Nx = {response.nx}\tNy = {response.ny}\n')
+                  f'Nx = {response.nx}\tNy = {response.ny}\n' +
+                  f'obj_x = {response.obj_x}\tobj_y = {response.obj_y}\n' +
+                  f'c = {response.c}\tdc = {response.dc}\tddc = {response.ddc}')
             img = self.br.imgmsg_to_cv2(response.img,
                                         desired_encoding='passthrough')
             img = cv2.circle(img, (int(response.x), int(response.y)),

@@ -1,9 +1,14 @@
-float64 t
+float32 t
 ---
-float64 x
-float64 y
-float64 tx
-float64 ty
-float64 nx
-float64 ny
+float32 obj_x
+float32 obj_y
+float32 x
+float32 y
+float32 tx
+float32 ty
+float32 nx
+float32 ny
+float32 c
+float32 dc
+float32 ddc
 sensor_msgs/Image img
