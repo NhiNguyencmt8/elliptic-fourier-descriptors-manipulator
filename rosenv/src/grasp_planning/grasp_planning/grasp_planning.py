@@ -3,9 +3,13 @@ import numpy as np
 import rclpy # Python library for ROS 2
 import time
 import interfaces
+import cv2
 from rclpy.node import Node # Handles the creation of nodes
 from std_msgs.msg import String
 from interfaces.srv import ComputePointEFD
+from sensor_msgs.msg import PointCloud2, Image
+from cv_bridge import CvBridge
+
 import sys
 
 timer_period = 1  # seconds = 100Hz
@@ -51,13 +55,24 @@ class GraspPlanning(Node):
         while not self.cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('service not available, waiting again...')
         self.req = ComputePointEFD.Request()
+        self.br = CvBridge()
+        self.img_publisher_ = self.create_publisher(Image, 'output_image', 10)
         self.set_of_points = []
-    
+
     def spin(self):
         while rclpy.ok():
             for i in range(0,100,1): 
                 response = self.send_request(i/100)
                 self.set_of_points.append([response.x, response.y, response.tx, response.ty, response.nx, response.ny])
+            
+
+            img = self.br.imgmsg_to_cv2(response.img,
+                                        desired_encoding='passthrough')
+            print(self.set_of_points)
+            img = cv2.circle(img, (int(response.x), int(response.y)),
+                             3, (0, 0, 255), -1)
+            #cv2.circle(current_frame,(self.set_of_points[0][0],self.set_of_points[0][1]), 63, (0,255,0), -1)
+            self.img_publisher_.publish(self.br.cv2_to_imgmsg(img, encoding="bgr8")) 
             print("Done one loop \n")
             time.sleep(timer_period)
 
@@ -68,12 +83,12 @@ class GraspPlanning(Node):
         self.req.t = t
         self.future = self.cli.call_async(self.req)
         rclpy.spin_until_future_complete(self, self.future)
-        index = t*100
         self.response = self.future.result()
         # self.get_logger().info(
         # 'Result from EFD: x %f y %f Tx %f Ty %f Nx %f Nx %f' %
         # (self.response.x, self.response.y, self.response.tx, self.response.ty, self.response.nx, self.response.ny))
         #self.set_of_points[index] = np.array([self.response.x, self.response.y, self.response.tx, self.response.ty, self.response.nx, self.response.ny])
+       
         return self.response
 
     @staticmethod
