@@ -20,7 +20,8 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'grasp_planning = grasp_planning.grasp_planning:main'
+            'grasp_planning = grasp_planning.grasp_planning:main',
+            'curvature_grasp = grasp_planning.curvature_grasp:main'
         ],
     },
 )

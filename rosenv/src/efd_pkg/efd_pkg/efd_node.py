@@ -1,5 +1,5 @@
 from interfaces.srv import ComputePointEFD
-from sensor_msgs.msg import PointCloud2
+from sensor_msgs.msg import PointCloud2, Image
 from sensor_msgs_py.point_cloud2 import read_points_numpy
 from geometry_msgs.msg import Polygon, Point32
 import rclpy
@@ -7,6 +7,7 @@ from rclpy.node import Node
 
 import numpy as np
 import cv2
+from cv_bridge import CvBridge
 import math
 import pyefd
 
@@ -28,10 +29,14 @@ class EFDService(Node):
         # `Nx(t)`, `Ny(t)`
         self.srv = self.create_service(ComputePointEFD, 'compute_efd',
                                        self.compute_efd_callback)
+
+        self.br = CvBridge()
+
         self.n = 20  # order
         self.coefs = []
         self.a0 = 0
         self.c0 = 0
+        self.T = 0
 
         # "Image" size 1000x1000
         self.im_sz = (1000, 1000)
@@ -64,25 +69,9 @@ class EFDService(Node):
         tmp = np.concatenate([([0.0]), np.cumsum(dt)])
         self.T = tmp[-1]
 
-        # # Visualize
-        # vis_contour = pyefd.reconstruct_contour(
-        #         self.coefs,
-        #         locus=(self.a0, self.c0)).astype(int)
-        # vis_img = np.zeros(self.im_sz, dtype=np.ubyte)
-        # vis_img[vis_contour[:, 1], vis_contour[:, 0]] = 255
-        #
-        # # Convert back to original unit
-        # vis_contour = (vis_contour.astype(float) - 500.0) / 500.0
-        # vis_msg = Polygon()
-        # for p in vis_contour:
-        #     pt = Point32()
-        #     pt.x = p[0]
-        #     pt.y = p[1]
-        #     pt.z = 0.0
-        #     vis_msg.points.append(pt)
-        # self.vis_publisher.publish(vis_msg)
 
     def compute_efd_callback(self, request, response):
+        print('Service requested')
         t = request.t
         # Calculate T
         omega = 2*self.n*math.pi/self.T
@@ -91,12 +80,40 @@ class EFDService(Node):
         cs = np.array([[c], [s]])
         sc = np.array([[-s], [c]])
         # Calculate x, y, Tx, Ty, Nx, Ny
-        response.x = self.a0 + np.sum(self.coefs[:, [0, 1]] @ cs)
-        response.y = self.c0 + np.sum(self.coefs[:, [2, 3]] @ cs)
+        # response.x = self.a0 + np.sum(self.coefs[:, [0, 1]] @ cs)
+        # response.y = self.c0 + np.sum(self.coefs[:, [2, 3]] @ cs)
         response.tx = omega * np.sum(self.coefs[:, [0, 1]] @ sc)
         response.ty = omega * np.sum(self.coefs[:, [2, 3]] @ sc)
         response.nx = -omega * omega * np.sum(self.coefs[:, [0, 1]] @ cs)
         response.ny = -omega * omega * np.sum(self.coefs[:, [2, 3]] @ cs)
+
+        t = np.array([request.t])
+        # Append extra dimension to enable element-wise broadcasted multiplication
+        coeffs = self.coefs.reshape(self.coefs.shape[0], self.coefs.shape[1], 1)
+
+        orders = coeffs.shape[0]
+        orders = np.arange(1, orders + 1).reshape(-1, 1)
+        order_phases = 2 * orders * np.pi * t.reshape(1, -1)
+
+        xt_all = coeffs[:, 0] * np.cos(order_phases) + coeffs[:, 1] * np.sin(order_phases)
+        yt_all = coeffs[:, 2] * np.cos(order_phases) + coeffs[:, 3] * np.sin(order_phases)
+
+        xt_all = xt_all.sum(axis=0)
+        yt_all = yt_all.sum(axis=0)
+        xt_all = xt_all + np.ones((1,)) * self.a0
+        yt_all = yt_all + np.ones((1,)) * self.a0
+
+        response.x = xt_all[0]
+        response.y = yt_all[0]
+
+        # Visualize
+        vis_contour = pyefd.reconstruct_contour(
+                self.coefs,
+                locus=(self.a0, self.c0)).astype(int)
+        vis_img = np.zeros(self.im_sz, dtype=np.ubyte)
+        vis_img[vis_contour[:, 1], vis_contour[:, 0]] = 255
+        vis_img = cv2.cvtColor(vis_img, cv2.COLOR_GRAY2BGR)
+        response.img = self.br.cv2_to_imgmsg(vis_img, encoding='bgr8')
 
         return response
 
