@@ -32,6 +32,7 @@ class EFDService(Node):
         self.coefs = []
         self.a0 = 0
         self.c0 = 0
+        self.T = 0
 
         # "Image" size 1000x1000
         self.im_sz = (1000, 1000)

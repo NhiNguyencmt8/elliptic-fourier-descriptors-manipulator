@@ -1,52 +1,48 @@
 import math
 import numpy as np
 import rclpy # Python library for ROS 2
+import time
+import interfaces
 from rclpy.node import Node # Handles the creation of nodes
-from sensor_msgs.msg import Image # Image is the message type
-from cv_bridge import CvBridge # Package to convert between ROS and OpenCV Images
-import cv2 # OpenCV library
 from std_msgs.msg import String
 from interfaces.srv import ComputePointEFD
 import sys
 
-timer_period = 0.1  # seconds = 10Hz
-timer = 0.1  # seconds = 10Hz
-
+timer_period = 1  # seconds = 100Hz
    
-class PointVisualize:
-    def __init__(self) :
-        self.img_subscription = self.create_subscription(
-        Image, 
-        '/camera1/image_raw', 
-        self.img_listener_callback, 
-        10)
-        self.img_subscription # prevent unused variable warning
-                # Create the publisher. This publisher will publish an Image
-        # to the video_frames topic. The queue size is 10 messages.
-        self.img_publisher_ = self.create_publisher(Image, 'output_image', 10)
-        # Used to convert between ROS and OpenCV images
-        self.br = CvBridge()
+# class PointVisualize:
+#     def __init__(self) :
+#         self.img_subscription = self.create_subscription(
+#         Image, 
+#         '/camera1/image_raw', 
+#         self.img_listener_callback, 
+#         10)
+#         self.img_subscription # prevent unused variable warning
+#                 # Create the publisher. This publisher will publish an Image
+#         # to the video_frames topic. The queue size is 10 messages.
+#         self.img_publisher_ = self.create_publisher(Image, 'output_image', 10)
+#         # Used to convert between ROS and OpenCV images
+#         self.br = CvBridge()
      
-    def img_listener_callback(self, data):
-        # Display the message on the console
-        self.get_logger().info('Receiving video frame')
+#     def img_listener_callback(self, data):
+#         # Display the message on the console
+#         self.get_logger().info('Receiving video frame')
     
-        # Convert ROS Image message to OpenCV image
-        current_frame = self.br.imgmsg_to_cv2(data)
+#         # Convert ROS Image message to OpenCV image
+#         current_frame = self.br.imgmsg_to_cv2(data)
 
-        # Find the contact locations
-        #metric, final_locations = self.quality_min_singular(self.object_center, self.contact_locations)
+#         # Find the contact locations
+#         #metric, final_locations = self.quality_min_singular(self.object_center, self.contact_locations)
         
-        #Drawing the locations on the image
-
-
-        # Publish the image.
-        # The 'cv2_to_imgmsg' method converts an OpenCV
-        # image to a ROS 2 image message
-        self.publisher_.publish(self.br.cv2_to_imgmsg(current_frame, encoding="bgr8")) 
+#         #Drawing the locations on the image
+#         self.set_of_points = np.zeros(shape=(1, 7))
+#         # Publish the image.
+#         # The 'cv2_to_imgmsg' method converts an OpenCV
+#         # image to a ROS 2 image message
+#         self.publisher_.publish(self.br.cv2_to_imgmsg(current_frame, encoding="bgr8")) 
         
 
-class GraspPlanning:
+class GraspPlanning(Node):
 
     def __init__(self):
         # Initiate the Node class's constructor and give it a name
@@ -55,17 +51,29 @@ class GraspPlanning:
         while not self.cli.wait_for_service(timeout_sec=1.0):
             self.get_logger().info('service not available, waiting again...')
         self.req = ComputePointEFD.Request()
-        self.object_center = np.array([0,0])
+        self.set_of_points = []
     
+    def spin(self):
+        while rclpy.ok():
+            for i in range(0,100,1): 
+                response = self.send_request(i/100)
+                self.set_of_points.append([response.x, response.y, response.tx, response.ty, response.nx, response.ny])
+            print("Done one loop \n")
+            time.sleep(timer_period)
+
+    
+
     def send_request(self, t):
+        #print("Sending request t = %f", t)
         self.req.t = t
         self.future = self.cli.call_async(self.req)
         rclpy.spin_until_future_complete(self, self.future)
-        timer += 0.1
+        index = t*100
         self.response = self.future.result()
-        self.get_logger().info(
-        'Result from EFD: x %f y %f Tx %f Ty %f Nx %f Nx %f' %
-        (self.response.x, self.response.y, self.response.tx, self.response.ty, self.response.nx, self.response.ny))
+        # self.get_logger().info(
+        # 'Result from EFD: x %f y %f Tx %f Ty %f Nx %f Nx %f' %
+        # (self.response.x, self.response.y, self.response.tx, self.response.ty, self.response.nx, self.response.ny))
+        #self.set_of_points[index] = np.array([self.response.x, self.response.y, self.response.tx, self.response.ty, self.response.nx, self.response.ny])
         return self.response
 
     @staticmethod
@@ -93,7 +101,7 @@ class GraspPlanning:
             for j in range(len(contact_locations)):
                 Gj = GraspPlanning.grasp_matrix(object_center, contact_locations[j])
                 #Append to the large matrix
-                G = np.eye(3,dtype=int) # Reset
+                G = np.eye(3,dtype=int) # R
                 G = np.append(G,Gi,axis=0)
                 G = np.append(G,Gj,axis=0)
                 #Grasp metrics calculation
@@ -112,25 +120,15 @@ class GraspPlanning:
 
     
 
-def main(args=None):
+def main():
   
   # Initialize the rclpy library
   rclpy.init()
   
   # Create the node
   grasp = GraspPlanning()
-  
-  # Spin the node so the callback function is called.
-  rclpy.spin(grasp)
-  grasp.timer = grasp.create_timer(timer_period, grasp.send_request(timer))
-  
-  # Destroy the node explicitly
-  # (optional - otherwise it will be done automatically
-  # when the garbage collector destroys the node object)
-  grasp.destroy_node()
-  
-  # Shutdown the ROS client library for Python
-  rclpy.shutdown()
+  print("Grasp planning node created")
+  grasp.spin()
   
 if __name__ == '__main__':
   main()    
