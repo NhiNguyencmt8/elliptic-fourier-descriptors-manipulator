@@ -1,6 +1,6 @@
 from setuptools import find_packages, setup
 
-package_name = 'efd_pkg'
+package_name = 'pc_py'
 
 setup(
     name=package_name,
@@ -20,7 +20,7 @@ setup(
     tests_require=['pytest'],
     entry_points={
         'console_scripts': [
-            'efd_service = efd_pkg.efd_node:main',
+            'pcd_publisher = pc_py.pcd_publisher_node:main',
         ],
     },
 )

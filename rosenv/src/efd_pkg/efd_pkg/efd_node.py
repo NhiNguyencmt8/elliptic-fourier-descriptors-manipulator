@@ -1,15 +1,14 @@
 from interfaces.srv import ComputePointEFD
 from sensor_msgs.msg import PointCloud2
+from sensor_msgs_py.point_cloud2 import read_points_numpy
+from geometry_msgs.msg import Polygon, Point32
 import rclpy
 from rclpy.node import Node
 
 import numpy as np
 import cv2
 import math
-from pyefd import elliptic_fourier_descriptors as efd
-from pyefd import calculate_dc_coefficients
-
-from pc2_processing import *
+import pyefd
 
 
 class EFDService(Node):
@@ -20,10 +19,11 @@ class EFDService(Node):
         # The topic contains segmented object point cloud
         self.pc_subscription = self.create_subscription(
             PointCloud2,
-            'pc_topic',
+            'pcd',
             self.pc_callback,
             10)
-        self.subscription  # prevent unused variable warning
+        self.pc_subscription  # prevent unused variable warning
+
         # Service that given `t`, computes `x(t)`, `y(t)`, `Tx(t)`, `Ty(t)`,
         # `Nx(t)`, `Ny(t)`
         self.srv = self.create_service(ComputePointEFD, 'compute_efd',
@@ -33,9 +33,16 @@ class EFDService(Node):
         self.a0 = 0
         self.c0 = 0
 
+        # Visualization publisher
+        self.vis_publisher = self.create_publisher(Polygon, 'efd/vis', 10)
+
     def pc_callback(self, msg):
-        obj_pc = np.array([i[0:2] for i in list(read_points(msg))])
-        max_dim = np.max(obj_pc, axis=1)
+        # Take x and y coordinates
+        obj_pc = read_points_numpy(msg)[:, [0, 1]]
+        print(obj_pc)
+        # max_dim = np.max(obj_pc, axis=0)
+        # print(max_dim)
+
         # Project points to the image
         silhouette = np.zeros(max_dim[0], max_dim[1])
         silhouette[obj_pc.astype(int)] = 1
@@ -44,14 +51,20 @@ class EFDService(Node):
 
         # Fit EFD
         contour = np.squeeze(contours[0])
-        self.coefs = efd(contour, order=self.n)
-        self.a0, self.c0 = calculate_dc_coefficients(np.squeeze(contours[0]))
+        self.coefs = pyefd.elliptic_fourier_descriptors(contour, order=self.n)
+        self.a0, self.c0 = pyefd.calculate_dc_coefficients(
+                np.squeeze(contours[0]))
         dxy = np.diff(contour, axis=0)
         dt = np.sqrt((dxy ** 2).sum(axis=1))
         tmp = np.concatenate([([0.0]), np.cumsum(dt)])
         self.T = tmp[-1]
 
         # Visualize
+        vis_contour = pyefd.reconstruct_contour(self.coefs)
+        vis_msg = Polygon()
+        vis_msg.points = [Point32(p[0], p[1], 0) for p in vis_contour]
+        self.vis_publisher.publish(vis_msg)
+
 
     def compute_efd_callback(self, request, response):
         t = request.t
