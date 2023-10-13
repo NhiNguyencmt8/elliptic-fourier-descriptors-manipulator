@@ -6,6 +6,7 @@
 #include <pcl_conversions/pcl_conversions.h>
 #include <pcl/ModelCoefficients.h>
 #include <pcl/segmentation/sac_segmentation.h>
+#include <pcl/filters/extract_indices.h>
 
 class PointCloudProcessingNode : public rclcpp::Node
 {
@@ -29,6 +30,7 @@ private:
         pcl::ModelCoefficients::Ptr coefficients (new pcl::ModelCoefficients);
         pcl::PointIndices::Ptr inliers (new pcl::PointIndices);
         pcl::SACSegmentation<pcl::PointXYZ> seg;
+        pcl::ExtractIndices<pcl::PointXYZ> extract;
 
         seg.setOptimizeCoefficients(true);
         seg.setModelType(pcl::SACMODEL_PLANE);
@@ -39,25 +41,31 @@ private:
         seg.segment(*inliers, *coefficients);
 
 
-        sor.setInputCloud(cloud);
-        sor.setLeafSize(0.1f, 0.1f, 0.1f);
-        sor.filter(*cloud_filtered);
+        // sor.setInputCloud(cloud);
+        // sor.setLeafSize(0.1f, 0.1f, 0.1f);
+        // sor.filter(*cloud_filtered);
+      
+        // Filter out the table
+        extract.setInputCloud(cloud);
+        extract.setIndices(inliers);
+        extract.setNegative(true);
+        extract.filter(*cloud_filtered);
 
         if (inliers->indices.size() == 0)
         {
             std::cerr << "Could not estimate a planar model for the given dataset." << std::endl;
         }
 
-        std::cerr << "Model coefficients: " << coefficients->values[0] << " " 
-                  << coefficients->values[1] << " "
-                  << coefficients->values[2] << " " 
-                  << coefficients->values[3] << std::endl;
+        // std::cerr << "Model coefficients: " << coefficients->values[0] << " " 
+        //           << coefficients->values[1] << " "
+        //           << coefficients->values[2] << " " 
+        //           << coefficients->values[3] << std::endl;
 
-        std::cerr << "Model inliers: " << inliers->indices.size () << std::endl;
-        for (const auto& idx: inliers->indices)
-            std::cerr << idx << "    " << cloud->points[idx].x << " "
-                               << cloud->points[idx].y << " "
-                               << cloud->points[idx].z << std::endl;
+        // std::cerr << "Model inliers: " << inliers->indices.size () << std::endl;
+        // for (const auto& idx: inliers->indices)
+        //     std::cerr << idx << "    " << cloud->points[idx].x << " "
+        //                        << cloud->points[idx].y << " "
+        //                        << cloud->points[idx].z << std::endl;
 
         sensor_msgs::msg::PointCloud2 output;
         pcl::toROSMsg(*cloud_filtered, output);

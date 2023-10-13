@@ -18,7 +18,7 @@
     </include>
 
     <include>
-      <uri>model://coke_can</uri>
+      <uri>model://bowl</uri>
       <pose>0 0 0.6 0 0 0</pose>
    </include>
   </world>
