@@ -6,37 +6,27 @@ from sensor_msgs.msg import Image # Image is the message type
 from cv_bridge import CvBridge # Package to convert between ROS and OpenCV Images
 import cv2 # OpenCV library
 from std_msgs.msg import String
+from interfaces.srv import ComputePointEFD
+import sys
+
+timer_period = 0.1  # seconds = 10Hz
+timer = 0.1  # seconds = 10Hz
+
    
-
-class GraspPlanning:
-
-    def __init__(self):
-        # Initiate the Node class's constructor and give it a name
-        super().__init__('grasp_planning')
-        
-        # Create the subscriber. This subscriber will receive an Image
-        # from the video_frames topic. The queue size is 10 messages.
-
-        self.object_subscription = self.create_subscription(
-        String, #Change msg type
-        '/object', 
-        self.obj_listener_callback, 
-        10)
-
+class PointVisualize:
+    def __init__(self) :
         self.img_subscription = self.create_subscription(
         Image, 
         '/camera1/image_raw', 
         self.img_listener_callback, 
         10)
         self.img_subscription # prevent unused variable warning
-
-        # Create the publisher. This publisher will publish an Image
+                # Create the publisher. This publisher will publish an Image
         # to the video_frames topic. The queue size is 10 messages.
         self.img_publisher_ = self.create_publisher(Image, 'output_image', 10)
         # Used to convert between ROS and OpenCV images
         self.br = CvBridge()
-        self.object_center = np.array([0,0])
-        
+     
     def img_listener_callback(self, data):
         # Display the message on the console
         self.get_logger().info('Receiving video frame')
@@ -45,7 +35,7 @@ class GraspPlanning:
         current_frame = self.br.imgmsg_to_cv2(data)
 
         # Find the contact locations
-        metric, final_locations = self.quality_min_singular(self.object_center, self.contact_locations)
+        #metric, final_locations = self.quality_min_singular(self.object_center, self.contact_locations)
         
         #Drawing the locations on the image
 
@@ -54,11 +44,29 @@ class GraspPlanning:
         # The 'cv2_to_imgmsg' method converts an OpenCV
         # image to a ROS 2 image message
         self.publisher_.publish(self.br.cv2_to_imgmsg(current_frame, encoding="bgr8")) 
+        
+
+class GraspPlanning:
+
+    def __init__(self):
+        # Initiate the Node class's constructor and give it a name
+        super().__init__('grasp_planning')
+        self.object_subscription = self.cli = self.create_client(ComputePointEFD, 'compute_efd')
+        while not self.cli.wait_for_service(timeout_sec=1.0):
+            self.get_logger().info('service not available, waiting again...')
+        self.req = ComputePointEFD.Request()
+        self.object_center = np.array([0,0])
     
-    def obj_listener_callback(self, msg):
-        self.get_logger().info('I heard: "%s"' % msg.data) 
-        self.object_center = msg.object_center
-        self.contact_locations = msg.object_center
+    def send_request(self, t):
+        self.req.t = t
+        self.future = self.cli.call_async(self.req)
+        rclpy.spin_until_future_complete(self, self.future)
+        timer += 0.1
+        self.response = self.future.result()
+        self.get_logger().info(
+        'Result from EFD: x %f y %f Tx %f Ty %f Nx %f Nx %f' %
+        (self.response.x, self.response.y, self.response.tx, self.response.ty, self.response.nx, self.response.ny))
+        return self.response
 
     @staticmethod
     def grasp_matrix(object_center, contact_location):
@@ -107,13 +115,14 @@ class GraspPlanning:
 def main(args=None):
   
   # Initialize the rclpy library
-  rclpy.init(args=args)
+  rclpy.init()
   
   # Create the node
   grasp = GraspPlanning()
   
   # Spin the node so the callback function is called.
   rclpy.spin(grasp)
+  grasp.timer = grasp.create_timer(timer_period, grasp.send_request(timer))
   
   # Destroy the node explicitly
   # (optional - otherwise it will be done automatically
