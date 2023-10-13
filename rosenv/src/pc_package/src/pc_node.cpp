@@ -14,7 +14,7 @@ public:
     {
         publisher_ = this->create_publisher<sensor_msgs::msg::PointCloud2>("downsampled_points", 10);
         subscription_ = this->create_subscription<sensor_msgs::msg::PointCloud2>(
-            "pcd", 10, std::bind(&PointCloudProcessingNode::listener_callback, this, std::placeholders::_1));
+            "/realsense/points", 10, std::bind(&PointCloudProcessingNode::listener_callback, this, std::placeholders::_1));
     }
 
 private:
@@ -34,7 +34,7 @@ private:
         seg.setModelType(pcl::SACMODEL_PLANE);
         seg.setMethodType(pcl::SAC_RANSAC);
         seg.setMaxIterations(1000);
-        seg.setDistanceThreshold(0.01);  // Adjust this value as needed
+        seg.setDistanceThreshold(0.001);  // Adjust this value as needed
         seg.setInputCloud(cloud);
         seg.segment(*inliers, *coefficients);
 
